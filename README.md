@@ -6,7 +6,7 @@
 
 部署到 GitHub Pages 后访问：
 
-https://hwyc888.github.io/testUI/
+https://testui-admission.pages.dev/
 
 ## 本地预览
 
