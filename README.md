@@ -32,7 +32,7 @@ https://testui-admission.pages.dev/
 - 前端：HTML、CSS、原生 JavaScript
 - 后端：Cloudflare Pages Functions
 - 数据库：Cloudflare D1
-- 密码：PBKDF2-SHA256 哈希存储
+- 密码：浏览器端 PBKDF2-SHA256（210,000 次迭代）派生，服务端使用独立 HMAC-SHA256 密钥生成验证值；数据库保存随机盐和验证值，不保存明文密码
 - 会话：服务端随机令牌哈希 + HttpOnly、Secure、SameSite Cookie
 - 部署：Cloudflare Pages 连接 GitHub，main 分支提交后自动发布
 
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'student')),
   full_name TEXT NOT NULL,
   phone TEXT,
