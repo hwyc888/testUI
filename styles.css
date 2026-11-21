@@ -436,3 +436,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .student-info-grid { grid-template-columns:1fr; }
   .student-status-card { gap:10px; }
 }
+
+.topbar-logout { min-height:32px; padding:0 10px; font-size:10px; }
+@media (max-width:700px) { .topbar-logout { min-height:30px; padding:0 8px; font-size:9px; } }
