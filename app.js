@@ -341,13 +341,13 @@
     openModal("学生报名详情", "报名资料仅用于本次演示界面展示。", body);
   }
 
-  async function updateStudentStatus(id, status) {
+  async function updateStudentStatus(id, status, adminNote) {
     var student = students.find(function (item) { return item.id === id; });
     if (!student) return;
     try {
       await apiRequest("/api/applications/" + encodeURIComponent(id), {
         method: "PATCH",
-        body: JSON.stringify({ status: status })
+        body: JSON.stringify({ status: status, admin_note: adminNote || "" })
       });
       closeModal();
       await loadAdminApplications();
@@ -356,6 +356,20 @@
     } catch (error) {
       showToast(error.message);
     }
+  }
+
+  function openRejectModal(id) {
+    var student = students.find(function (item) { return item.id === id; });
+    if (!student) return;
+    var body = '<form id="rejectApplicationForm"><div class="modal-body"><div class="form-field"><label for="rejectNote">退回原因 / 补充材料说明</label><textarea id="rejectNote" name="admin_note" maxlength="300" required placeholder="请清楚说明需要学生补充或修改的内容"></textarea></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-close-modal>取消</button><button type="submit" class="btn btn-primary">确认退回</button></div></form>';
+    openModal("退回报名资料", "请填写退回原因，学生登录后可以查看并重新提交。", body, function () {
+      document.getElementById("rejectApplicationForm").addEventListener("submit", function (event) {
+        event.preventDefault();
+        var note = document.getElementById("rejectNote").value.trim();
+        if (!note) { showToast("请填写退回原因"); return; }
+        updateStudentStatus(id, "已退回", note);
+      });
+    });
   }
 
   function exportCSV() {
@@ -740,7 +754,7 @@
     else if (type === "export") exportCSV();
     else if (type === "view") openStudentDetail(id);
     else if (type === "approve") updateStudentStatus(id, "已录取");
-    else if (type === "reject") updateStudentStatus(id, "已退回");
+    else if (type === "reject") openRejectModal(id);
     else if (type === "menu") toggleSidebar();
     else if (type === "notifications") showToast("当前没有新的系统通知");
     else if (type === "help") showToast("使用指南：从学生报名开始，按流程完成资料审核");
