@@ -181,7 +181,7 @@
 
   function renderStudents() {
     return pageHeading("学生报名管理", "统一管理学生报名信息，快速查询、筛选和维护报名档案。", '<button class="btn btn-secondary" data-action="export">' + icon("download") + '导出名单</button><button class="btn btn-primary" data-action="new">' + icon("plus") + '新增报名</button>') +
-      '<div id="studentsTableRegion">' + tableCard(getFilteredStudents("all"), { title: "报名学生名单", subtitle: "所有报名记录均可在此查询和管理", showExport: true }) + '</div>';
+      '<div id="studentsTableRegion">' + tableCard(students.slice(), { title: "报名学生名单", subtitle: "所有报名记录均可在此查询和管理", showExport: true }) + '</div>';
   }
 
   function renderAudit() {
