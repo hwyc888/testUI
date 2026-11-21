@@ -1,17 +1,10 @@
 const SESSION_COOKIE = "admission_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
-const PBKDF2_ITERATIONS = 210000;
 
 function base64url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function fromBase64url(value) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
 export function json(data, status = 200, extraHeaders = {}) {
@@ -40,40 +33,6 @@ export function getCookie(request) {
   const cookieHeader = request.headers.get("Cookie") || "";
   const match = cookieHeader.match(new RegExp("(?:^|;\\s*)" + SESSION_COOKIE + "=([^;]+)"));
   return match ? decodeURIComponent(match[1]) : null;
-}
-
-export async function hashPassword(password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const derived = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-    key,
-    256
-  );
-  return "pbkdf2$" + PBKDF2_ITERATIONS + "$" + base64url(salt) + "$" + base64url(new Uint8Array(derived));
-}
-
-export async function verifyPassword(password, stored) {
-  try {
-    const [scheme, iterationsText, saltText, hashText] = String(stored).split("$");
-    if (scheme !== "pbkdf2") return false;
-    const iterations = Number(iterationsText);
-    if (!Number.isInteger(iterations) || iterations < 100000 || iterations > 500000) return false;
-    const salt = fromBase64url(saltText);
-    const expected = fromBase64url(hashText);
-    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-    const derived = new Uint8Array(await crypto.subtle.deriveBits(
-      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
-      key,
-      expected.length * 8
-    ));
-    if (derived.length !== expected.length) return false;
-    let diff = 0;
-    for (let i = 0; i < derived.length; i += 1) diff |= derived[i] ^ expected[i];
-    return diff === 0;
-  } catch {
-    return false;
-  }
 }
 
 export async function hashKey(value) {
@@ -122,10 +81,6 @@ export function publicUser(user) {
 
 export function newId(prefix) {
   return prefix + "_" + base64url(crypto.getRandomValues(new Uint8Array(18)));
-}
-
-export function validPassword(password, minimum = 8) {
-  return typeof password === "string" && password.length >= minimum && password.length <= 128;
 }
 
 export async function secureCompare(left, right) {
