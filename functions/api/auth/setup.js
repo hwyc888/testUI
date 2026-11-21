@@ -27,10 +27,8 @@ export async function onRequestPost({ request, env }) {
   if (!validPassword(password, 12)) return json({ error: "管理员密码至少 12 位，最多 128 位" }, 400);
 
   let stage = "密码加密";
-  let userId = null;
   try {
     const id = newId("usr");
-    userId = id;
     const now = new Date().toISOString();
     const passwordHash = await hashPassword(password);
 
@@ -45,7 +43,6 @@ export async function onRequestPost({ request, env }) {
       token = await createSession({ id, username, role: "admin", full_name: fullName }, env);
     } catch (error) {
       await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
-      userId = null;
       throw error;
     }
 
