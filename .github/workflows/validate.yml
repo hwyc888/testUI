@@ -28,3 +28,6 @@ jobs:
             echo "Checking $file"
             node --input-type=module --check < "$file"
           done < <(find functions -type f -name '*.js' -print0)
+
+      - name: Run password proof tests
+        run: node --test tests/password.test.mjs
