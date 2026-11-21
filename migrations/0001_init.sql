@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'student')),
   full_name TEXT NOT NULL,
   phone TEXT,
