@@ -419,8 +419,17 @@
       credentials: "same-origin",
       headers: headers
     }));
-    var data = await response.json().catch(function () { return {}; });
-    if (!response.ok) throw new Error(data.error || "请求失败，请稍后重试");
+    var raw = await response.text();
+    var data;
+    try {
+      data = JSON.parse(raw);
+    } catch (error) {
+      data = {
+        error: "服务器返回异常响应（HTTP " + response.status + "）。请检查后端服务后重试。"
+      };
+    }
+    if (!response.ok) throw new Error(data.error || ("请求失败，HTTP " + response.status));
+    if (!data || typeof data !== "object") throw new Error("服务器响应格式不正确");
     return data;
   }
 
