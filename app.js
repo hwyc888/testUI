@@ -29,6 +29,10 @@
   var pageContent = document.getElementById("pageContent");
   var modalRoot = document.getElementById("modalRoot");
   var toastRoot = document.getElementById("toastRoot");
+  var authRoot = document.getElementById("authRoot");
+  var studentRoot = document.getElementById("studentRoot");
+  var adminShell = document.getElementById("adminShell");
+  var currentUser = null;
   var sidebar = document.getElementById("sidebar");
   var mobileBackdrop = document.getElementById("mobileBackdrop");
 
@@ -167,12 +171,12 @@
   function renderDashboard() {
     var recent = students.slice().sort(function (a, b) { return b.date.localeCompare(a.date); }).slice(0, 5);
     return pageHeading("招生工作总览", "早上好，欢迎回来。这里是本年度招生工作的实时概况。", seasonChip() +
-      '<button class="btn btn-secondary" data-action="export">' + icon("download") + '导出报表</button><button class="btn btn-primary" data-action="new">' + icon("plus") + '新建报名</button>') +
+      '<button class="btn btn-secondary" data-action="export">' + icon("download") + '导出报表</button>') +
       '<section class="stats-grid">' +
-      statCard("累计报名人数", "1,284", '<span class="trend-up">↗ 12.8%</span> 较上月增长', "users", "blue") +
-      statCard("待审核报名", "36", '<span class="trend-neutral">需要及时处理</span>', "clipboard", "amber") +
-      statCard("已录取人数", "1,006", '<span class="trend-up">↗ 8.6%</span> 录取人数增长', "check", "teal") +
-      statCard("招生计划完成率", "78.4%", '<span class="trend-up">↗ 5.2%</span> 目标完成进度', "chart", "violet") +
+      statCard("累计报名人数", String(students.length), '<span class="trend-neutral">来自学生端真实提交</span>', "users", "blue") +
+      statCard("待审核报名", String(students.filter(function (item) { return item.status === "待审核"; }).length), '<span class="trend-neutral">需要及时处理</span>', "clipboard", "amber") +
+      statCard("已录取人数", String(students.filter(function (item) { return item.status === "已录取"; }).length), '<span class="trend-neutral">已完成审核录取</span>', "check", "teal") +
+      statCard("待处理比例", students.length ? Math.round(students.filter(function (item) { return item.status === "待审核"; }).length / students.length * 100) + "%" : "0%", '<span class="trend-neutral">当前报名审核占比</span>', "chart", "violet") +
       '</section>' +
       '<div class="dashboard-grid"><section class="card"><div class="card-header"><div class="card-title"><div><h2>报名趋势</h2><p>近七个月报名人数变化</p></div></div><div class="chart-legend"><span class="legend-item"><i class="legend-dot"></i>今年报名</span><span class="legend-item"><i class="legend-dot secondary"></i>去年同期</span></div></div>' + chartMarkup() + '</section>' + progressCard() + '</div>' +
       tableCard(recent, { title: "最新报名记录", subtitle: "最近提交的学生报名信息", showExport: true }) +
@@ -180,7 +184,7 @@
   }
 
   function renderStudents() {
-    return pageHeading("学生报名管理", "统一管理学生报名信息，快速查询、筛选和维护报名档案。", '<button class="btn btn-secondary" data-action="export">' + icon("download") + '导出名单</button><button class="btn btn-primary" data-action="new">' + icon("plus") + '新增报名</button>') +
+    return pageHeading("学生报名管理", "统一管理学生报名信息，快速查询、筛选和维护报名档案。", '<button class="btn btn-secondary" data-action="export">' + icon("download") + '导出名单</button>') +
       '<div id="studentsTableRegion">' + tableCard(students.slice(), { title: "报名学生名单", subtitle: "所有报名记录均可在此查询和管理", showExport: true }) + '</div>';
   }
 
@@ -384,6 +388,331 @@
     mobileBackdrop.classList.toggle("show");
   }
 
+
+  async function apiRequest(path, options) {
+    var opts = options || {};
+    var headers = Object.assign({}, opts.headers || {});
+    if (opts.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+    var response = await fetch(path, Object.assign({}, opts, {
+      credentials: "same-origin",
+      headers: headers
+    }));
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(data.error || "请求失败，请稍后重试");
+    return data;
+  }
+
+  function maskPhone(phone) {
+    var value = String(phone || "");
+    return /^1[3-9]\d{9}$/.test(value) ? value.slice(0, 3) + "****" + value.slice(-4) : value;
+  }
+
+  async function initializeApp() {
+    authRoot.hidden = true;
+    studentRoot.hidden = true;
+    adminShell.hidden = true;
+    try {
+      var session = await apiRequest("/api/auth/me");
+      await enterApp(session.user);
+      return;
+    } catch (error) {
+      // An absent session is expected before login.
+    }
+    try {
+      var setup = await apiRequest("/api/auth/setup");
+      renderAuthScreen(setup.initialized ? "login" : "setup", "admin");
+    } catch (error) {
+      renderAuthScreen("login", "admin", "登录服务暂时不可用，请刷新页面后重试");
+    }
+  }
+
+  function renderAuthScreen(mode, role, initialError) {
+    var activeRole = role || "admin";
+    authRoot.hidden = false;
+    studentRoot.hidden = true;
+    adminShell.hidden = true;
+
+    var heading = mode === "setup" ? "初始化管理员账号" : mode === "register" ? "创建学生账号" : "欢迎登录";
+    var description = mode === "setup"
+      ? "首次使用请先创建学校招生管理员账号。初始化仅允许完成一次。"
+      : mode === "register"
+        ? "注册学生账号后，即可在线填写报名资料并查询审核进度。"
+        : "登录校园招生管理平台，继续处理招生工作。";
+
+    var fields = "";
+    if (mode === "setup") {
+      fields = '<div class="auth-field"><label for="setupKey">一次性初始化密钥</label><input id="setupKey" name="setup_key" type="password" autocomplete="off" required placeholder="请输入系统初始化密钥" /></div>' +
+        '<div class="auth-field"><label for="authName">管理员姓名</label><input id="authName" name="full_name" required maxlength="30" placeholder="请输入管理员姓名" /></div>' +
+        '<div class="auth-field"><label for="authUsername">管理员账号</label><input id="authUsername" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,31}" autocomplete="username" placeholder="例如：admin" /></div>' +
+        '<div class="auth-field"><label for="authPassword">设置登录密码</label><input id="authPassword" name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" placeholder="至少 12 位，建议字母、数字和符号组合" /></div>' +
+        '<div class="auth-field"><label for="authConfirm">确认登录密码</label><input id="authConfirm" name="confirm_password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" placeholder="请再次输入密码" /></div>';
+    } else if (mode === "register") {
+      fields = '<div class="auth-field"><label for="authName">学生姓名</label><input id="authName" name="full_name" required maxlength="30" autocomplete="name" placeholder="请输入学生姓名" /></div>' +
+        '<div class="auth-field"><label for="authPhone">手机号码（登录账号）</label><input id="authPhone" name="phone" required inputmode="tel" pattern="1[3-9][0-9]{9}" maxlength="11" autocomplete="tel" placeholder="请输入本人手机号" /></div>' +
+        '<div class="auth-field"><label for="authPassword">设置密码</label><input id="authPassword" name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="至少 8 位" /></div>' +
+        '<div class="auth-field"><label for="authConfirm">确认密码</label><input id="authConfirm" name="confirm_password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="请再次输入密码" /></div>';
+    } else {
+      fields = '<div class="auth-field"><label for="authUsername">' + (activeRole === "admin" ? "管理员账号" : "手机号码") + '</label><input id="authUsername" name="username" required autocomplete="username" ' +
+        (activeRole === "student" ? 'inputmode="tel" maxlength="11" placeholder="请输入注册时使用的手机号"' : 'placeholder="请输入管理员账号"') + ' /></div>' +
+        '<div class="auth-field"><label for="authPassword">登录密码</label><input id="authPassword" name="password" type="password" required maxlength="128" autocomplete="current-password" placeholder="请输入登录密码" /></div>';
+    }
+
+    authRoot.innerHTML = '<div class="auth-page">' +
+      '<section class="auth-showcase"><div class="auth-brand"><div class="brand-mark">' +
+      '<svg viewBox="0 0 40 40" fill="none"><path d="M5 13.5 20 6l15 7.5L20 21 5 13.5Z" fill="currentColor"/><path d="M11 17v8.2c0 2.4 4 4.8 9 4.8s9-2.4 9-4.8V17l-9 4.5L11 17Z" fill="currentColor" opacity=".72"/></svg>' +
+      '</div><div><strong>校园招生管理系统</strong><span>ADMISSION PORTAL</span></div></div>' +
+      '<div class="auth-showcase-copy"><div class="eyebrow">SMART CAMPUS · ADMISSION</div><h1>让每一次报名<br>都清晰、有序、可追踪</h1><p>连接学生与学校招生办公室，在线完成报名资料提交、进度查询与审核管理，让招生服务更简单。</p></div>' +
+      '<div class="auth-feature-list"><div class="auth-feature"><strong>在线自主报名</strong><span>学生随时填写报名资料</span></div><div class="auth-feature"><strong>审核进度可查</strong><span>报名状态实时查看</span></div><div class="auth-feature"><strong>统一招生管理</strong><span>后台集中处理报名信息</span></div></div>' +
+      '<div class="auth-copyright">© 2026 校园招生管理系统 · 安全连接 · 高效服务</div></section>' +
+      '<section class="auth-panel"><div class="auth-card"><div class="auth-card-heading"><div class="eyebrow">WELCOME TO ADMISSION PORTAL</div><h2>' + heading + '</h2><p>' + description + '</p></div>' +
+      (mode === "login" ? '<div class="auth-tabs"><button class="auth-tab ' + (activeRole === "admin" ? "active" : "") + '" type="button" data-auth-role="admin">管理员登录</button><button class="auth-tab ' + (activeRole === "student" ? "active" : "") + '" type="button" data-auth-role="student">学生登录</button></div>' : '') +
+      (mode === "setup" ? '<div class="setup-notice">首次初始化管理员后，其他用户不能再通过此入口创建管理员账号。请妥善保管管理员密码。</div><div style="height:14px"></div>' : '') +
+      '<div id="authError" class="auth-error ' + (initialError ? "show" : "") + '">' + escapeHtml(initialError || "") + '</div>' +
+      '<form id="authForm" class="auth-form">' + fields +
+      '<button type="submit" class="btn btn-primary auth-submit">' + (mode === "setup" ? "创建管理员并进入系统" : mode === "register" ? "注册并进入学生端" : "登录系统") + '</button></form>' +
+      '<div class="auth-footer-row">' +
+      (mode === "login" ? (activeRole === "student" ? '<span>还没有学生账号？</span><button type="button" class="auth-inline-link" data-auth-mode="register">立即注册</button>' : '<span>学生请使用学生端入口</span><button type="button" class="auth-inline-link" data-auth-role="student">学生登录 →</button>') :
+        mode === "register" ? '<span>已经注册过账号？</span><button type="button" class="auth-inline-link" data-auth-mode="login">返回登录</button>' :
+        '<span>初始化完成后使用管理员账号登录</span><span>一次性操作</span>') +
+      '</div></div></section></div>';
+
+    authRoot.querySelectorAll("[data-auth-role]").forEach(function (button) {
+      button.addEventListener("click", function () { renderAuthScreen("login", button.getAttribute("data-auth-role")); });
+    });
+    authRoot.querySelectorAll("[data-auth-mode]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var nextMode = button.getAttribute("data-auth-mode");
+        renderAuthScreen(nextMode, nextMode === "register" ? "student" : "student");
+      });
+    });
+
+    var form = document.getElementById("authForm");
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      var submit = form.querySelector('button[type="submit"]');
+      var errorNode = document.getElementById("authError");
+      errorNode.classList.remove("show");
+      submit.disabled = true;
+      submit.textContent = "正在处理...";
+      var data = new FormData(form);
+      try {
+        var result;
+        if (mode === "setup") {
+          var password = String(data.get("password") || "");
+          if (password !== String(data.get("confirm_password") || "")) throw new Error("两次输入的密码不一致");
+          result = await apiRequest("/api/auth/setup", {
+            method: "POST",
+            headers: { "X-Setup-Key": String(data.get("setup_key") || "") },
+            body: JSON.stringify({
+              username: data.get("username"),
+              full_name: data.get("full_name"),
+              password: password
+            })
+          });
+        } else if (mode === "register") {
+          var registerPassword = String(data.get("password") || "");
+          if (registerPassword !== String(data.get("confirm_password") || "")) throw new Error("两次输入的密码不一致");
+          result = await apiRequest("/api/auth/register", {
+            method: "POST",
+            body: JSON.stringify({
+              full_name: data.get("full_name"),
+              phone: data.get("phone"),
+              password: registerPassword
+            })
+          });
+        } else {
+          result = await apiRequest("/api/auth/login", {
+            method: "POST",
+            body: JSON.stringify({
+              username: data.get("username"),
+              password: data.get("password"),
+              role: activeRole
+            })
+          });
+        }
+        await enterApp(result.user);
+      } catch (error) {
+        errorNode.textContent = error.message || "操作失败，请重试";
+        errorNode.classList.add("show");
+        submit.disabled = false;
+        submit.textContent = mode === "setup" ? "创建管理员并进入系统" : mode === "register" ? "注册并进入学生端" : "登录系统";
+      }
+    });
+  }
+
+  async function enterApp(user) {
+    currentUser = user;
+    authRoot.hidden = true;
+    modalRoot.innerHTML = "";
+    if (user.role === "student") {
+      adminShell.hidden = true;
+      await loadStudentPortal(user);
+      return;
+    }
+    studentRoot.hidden = true;
+    adminShell.hidden = false;
+    var topName = document.querySelector(".top-user strong");
+    if (topName) topName.textContent = user.full_name || "招生管理员";
+    await loadAdminApplications();
+    renderPage("dashboard");
+  }
+
+  async function loadAdminApplications() {
+    try {
+      var result = await apiRequest("/api/applications");
+      students = (result.applications || []).map(function (row, index) {
+        return {
+          id: row.id,
+          name: row.student_name,
+          gender: row.gender,
+          phone: maskPhone(row.phone),
+          school: row.school,
+          major: row.major,
+          source: row.source,
+          date: String(row.created_at || "").slice(0, 10),
+          status: row.status,
+          adminNote: row.admin_note || "",
+          color: ["indigo", "mint", "coral", "gold"][index % 4]
+        };
+      });
+    } catch (error) {
+      students = [];
+      showToast("报名数据加载失败：" + error.message);
+    }
+  }
+
+  function studentProgress(status) {
+    var submitted = !!status;
+    var reviewed = status === "已录取" || status === "已退回";
+    return '<div class="student-progress"><span class="student-progress-step ' + (submitted ? "done" : "") + '">资料已提交</span><i class="student-progress-line"></i><span class="student-progress-step ' + (reviewed ? "done" : "") + '">学校审核</span><i class="student-progress-line"></i><span class="student-progress-step ' + (status === "已录取" ? "done" : "") + '">录取结果</span></div>';
+  }
+
+  async function loadStudentPortal(user) {
+    studentRoot.hidden = false;
+    adminShell.hidden = true;
+    var result;
+    try {
+      result = await apiRequest("/api/applications");
+      renderStudentPortal(user, result.application || null);
+    } catch (error) {
+      studentRoot.innerHTML = '<div class="student-page"><div class="student-content"><div class="card panel"><h2>学生端暂时无法加载</h2><p class="panel-subtitle">' + escapeHtml(error.message) + '</p><button class="btn btn-secondary" data-student-action="logout">退出登录</button></div></div></div>';
+    }
+  }
+
+  function renderStudentPortal(user, application) {
+    var status = application ? application.status : "";
+    var statusTitle = status === "已录取" ? "报名审核已通过" : status === "已退回" ? "报名资料需要补充" : status === "待审核" ? "报名资料已提交，等待学校审核" : "欢迎进入学生报名中心";
+    var statusDescription = status === "已录取" ? "学校已完成审核，请留意后续录取通知。" :
+      status === "已退回" ? (application.admin_note ? "审核意见：" + escapeHtml(application.admin_note) : "请根据学校反馈补充或修改报名资料后重新提交。") :
+      status === "待审核" ? "招生办公室正在核对报名资料，请耐心等待。" :
+      "目前还没有报名记录，请填写下方信息完成自主报名。";
+    var statusColor = status === "已录取" ? "teal" : status === "已退回" ? "amber" : "blue";
+    var statusIcon = status === "已录取" ? "check" : status === "已退回" ? "edit" : status === "待审核" ? "clock" : "clipboard";
+    var statusLabel = status || "尚未报名";
+    var applicationSummary = application ? '<section class="student-card"><div class="student-card-heading"><div><h2>我的报名记录</h2><p>以下为你提交的报名资料与当前审核状态</p></div>' + statusTag(status) + '</div><div class="student-info-grid">' +
+      '<div class="student-info-item"><span>学生姓名</span><strong>' + escapeHtml(application.student_name) + '</strong></div>' +
+      '<div class="student-info-item"><span>性别</span><strong>' + escapeHtml(application.gender) + '</strong></div>' +
+      '<div class="student-info-item"><span>联系电话</span><strong>' + escapeHtml(maskPhone(application.phone)) + '</strong></div>' +
+      '<div class="student-info-item"><span>毕业学校</span><strong>' + escapeHtml(application.school) + '</strong></div>' +
+      '<div class="student-info-item"><span>意向专业</span><strong>' + escapeHtml(application.major) + '</strong></div>' +
+      '<div class="student-info-item"><span>提交日期</span><strong>' + escapeHtml(String(application.created_at || "").slice(0, 10)) + '</strong></div>' +
+      '</div>' + studentProgress(status) + '</section>' :
+      '<section class="student-card"><div class="student-empty">' + icon("clipboard") + '<div>你还没有提交报名资料</div><span>填写下方表单后，招生办公室即可收到你的报名信息。</span></div></section>';
+
+    var applicationForm = status === "已录取" ? '<section class="student-card"><div class="student-note">你的报名已完成录取审核，资料暂不可自行修改。如需更正，请联系学校招生办公室。</div></section>' :
+      '<section class="student-card"><div class="student-card-heading"><div><h2>' + (application ? "修改 / 重新提交报名资料" : "填写报名资料") + '</h2><p>请认真核对信息，提交后学校招生办公室将进行审核。</p></div></div>' +
+      '<form id="studentApplicationForm"><div class="student-form-grid">' +
+      '<div class="student-form-field"><label for="applyName">学生姓名 *</label><input id="applyName" name="student_name" required maxlength="30" value="' + escapeHtml(application ? application.student_name : user.full_name) + '" placeholder="请输入学生姓名" /></div>' +
+      '<div class="student-form-field"><label for="applyGender">性别 *</label><select id="applyGender" name="gender" required><option value="">请选择</option><option value="男"' + (application && application.gender === "男" ? " selected" : "") + '>男</option><option value="女"' + (application && application.gender === "女" ? " selected" : "") + '>女</option></select></div>' +
+      '<div class="student-form-field"><label for="applyPhone">联系电话 *</label><input id="applyPhone" name="phone" required inputmode="tel" pattern="1[3-9][0-9]{9}" maxlength="11" value="' + escapeHtml(application ? application.phone : user.username) + '" placeholder="请输入 11 位手机号" /></div>' +
+      '<div class="student-form-field"><label for="applySchool">毕业学校 *</label><input id="applySchool" name="school" required maxlength="100" value="' + escapeHtml(application ? application.school : "") + '" placeholder="请输入毕业学校名称" /></div>' +
+      '<div class="student-form-field full"><label for="applyMajor">意向专业 *</label><select id="applyMajor" name="major" required><option value="">请选择意向专业</option>' +
+      majors.map(function (major) { return '<option value="' + escapeHtml(major.name) + '"' + (application && application.major === major.name ? " selected" : "") + '>' + escapeHtml(major.name) + '</option>'; }).join("") +
+      '</select></div></div><div class="student-form-actions"><button type="submit" class="btn btn-primary">' + icon("check") + (application ? "保存并重新提交" : "提交报名资料") + '</button></div></form></section>';
+
+    studentRoot.innerHTML = '<div class="student-page"><header class="student-topbar"><div class="student-topbar-brand"><div class="brand-mark">' +
+      '<svg viewBox="0 0 40 40" fill="none"><path d="M5 13.5 20 6l15 7.5L20 21 5 13.5Z" fill="currentColor"/><path d="M11 17v8.2c0 2.4 4 4.8 9 4.8s9-2.4 9-4.8V17l-9 4.5L11 17Z" fill="currentColor" opacity=".72"/></svg>' +
+      '</div><div><strong>学生报名服务中心</strong><span>STUDENT ADMISSION PORTAL</span></div></div><div class="student-topbar-actions"><div class="student-user-chip"><span class="avatar avatar-indigo">' + escapeHtml(String(user.full_name || "学").slice(0, 1)) + '</span>' + escapeHtml(user.full_name) + '</div><button class="btn btn-secondary" data-student-action="password">修改密码</button><button class="btn btn-secondary" data-student-action="logout">退出登录</button></div></header>' +
+      '<main class="student-content"><div class="student-welcome"><div><div class="eyebrow">STUDENT CENTER</div><h1>你好，' + escapeHtml(user.full_name) + '</h1><p>欢迎使用学生报名服务中心，你可以在这里提交报名资料并跟踪审核进度。</p></div><div class="season-chip"><span></span>2026 招生季</div></div>' +
+      '<section class="student-status-card"><div class="student-status-icon">' + icon(statusIcon) + '</div><div class="student-status-copy"><strong>' + statusTitle + '</strong><span>' + statusDescription + '</span></div><div class="student-status-side"><strong>' + statusLabel + '</strong><span>当前报名状态</span></div></section>' +
+      applicationSummary + applicationForm + '<div class="student-note">温馨提示：请确保联系电话准确有效。报名资料仅用于学校招生审核，请勿在公共设备上保存账号密码。</div></main></div>';
+
+    studentRoot.onclick = function (event) {
+      var action = event.target.closest("[data-student-action]");
+      if (!action) return;
+      var type = action.getAttribute("data-student-action");
+      if (type === "logout") logout();
+      if (type === "password") openChangePasswordModal();
+    };
+    var form = document.getElementById("studentApplicationForm");
+    if (form) {
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        var submit = form.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        submit.textContent = "正在提交...";
+        var data = new FormData(form);
+        try {
+          var response = await apiRequest("/api/applications", {
+            method: "POST",
+            body: JSON.stringify({
+              student_name: data.get("student_name"),
+              gender: data.get("gender"),
+              phone: data.get("phone"),
+              school: data.get("school"),
+              major: data.get("major")
+            })
+          });
+          showToast(response.message || "报名资料已提交");
+          await loadStudentPortal(user);
+        } catch (error) {
+          showToast(error.message);
+          submit.disabled = false;
+          submit.innerHTML = icon("check") + (application ? "保存并重新提交" : "提交报名资料");
+        }
+      });
+    }
+  }
+
+  async function openChangePasswordModal() {
+    var body = '<form id="changePasswordForm"><div class="modal-body"><div class="form-grid">' +
+      '<div class="form-field full"><label for="oldPassword">当前密码</label><input id="oldPassword" name="old_password" type="password" required autocomplete="current-password" /></div>' +
+      '<div class="form-field full"><label for="newPassword">新密码</label><input id="newPassword" name="new_password" type="password" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="至少 8 位" /></div>' +
+      '<div class="form-field full"><label for="confirmNewPassword">确认新密码</label><input id="confirmNewPassword" type="password" required minlength="8" maxlength="128" autocomplete="new-password" /></div>' +
+      '</div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-close-modal>取消</button><button type="submit" class="btn btn-primary">更新密码</button></div></form>';
+    openModal("修改登录密码", "修改后当前账号的其他登录会话将失效。", body, function () {
+      document.getElementById("changePasswordForm").addEventListener("submit", async function (event) {
+        event.preventDefault();
+        var form = event.currentTarget;
+        var data = new FormData(form);
+        var newPassword = String(data.get("new_password") || "");
+        if (newPassword !== document.getElementById("confirmNewPassword").value) {
+          showToast("两次输入的新密码不一致");
+          return;
+        }
+        try {
+          await apiRequest("/api/auth/change-password", {
+            method: "POST",
+            body: JSON.stringify({ old_password: data.get("old_password"), new_password: newPassword })
+          });
+          closeModal();
+          showToast("密码已更新");
+        } catch (error) {
+          showToast(error.message);
+        }
+      });
+    });
+  }
+
+  async function logout() {
+    try { await apiRequest("/api/auth/logout", { method: "POST" }); } catch (error) { /* Clear local view even if the session expired. */ }
+    currentUser = null;
+    students = [];
+    modalRoot.innerHTML = "";
+    renderAuthScreen("login", "admin");
+  }
+
   document.querySelectorAll("[data-icon]").forEach(function (node) {
     node.innerHTML = icon(node.getAttribute("data-icon"));
   });
@@ -415,7 +744,8 @@
     else if (type === "save-settings") showToast("设置已保存（演示状态）");
     else if (type === "major-info") showToast("专业维护功能将在接入后台后开放");
     else if (type === "account") showToast("账户信息由学校系统管理员维护");
-    else if (type === "password") showToast("演示版暂不提供密码修改功能");
+    else if (type === "password") openChangePasswordModal();
+    else if (type === "logout") logout();
   });
 
   document.addEventListener("input", function (event) {
@@ -453,5 +783,5 @@
     }
   });
 
-  renderPage("dashboard");
+  initializeApp();
 })();
