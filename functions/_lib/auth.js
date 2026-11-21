@@ -76,6 +76,11 @@ export async function verifyPassword(password, stored) {
   }
 }
 
+export async function hashKey(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return base64url(new Uint8Array(digest));
+}
+
 async function digestToken(token) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return base64url(new Uint8Array(digest));
