@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f5f7fb" />
+  <meta name="description" content="校园学生报名管理系统，提供报名管理、审核、专业管理和数据统计。" />
+  <title>校园招生管理系统</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" fill="none"><path d="M5 13.5 20 6l15 7.5L20 21 5 13.5Z" fill="currentColor"/><path d="M11 17v8.2c0 2.4 4 4.8 9 4.8s9-2.4 9-4.8V17l-9 4.5L11 17Z" fill="currentColor" opacity=".72"/><path d="M35 14v9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="35" cy="25.5" r="2" fill="currentColor"/></svg>
+        </div>
+        <div class="brand-copy">
+          <strong>校园招生管理系统</strong>
+          <span>ADMISSION PORTAL</span>
+        </div>
+      </div>
+
+      <div class="sidebar-label">工作台</div>
+      <nav class="nav-list">
+        <button class="nav-item active" data-page="dashboard"><span class="nav-icon" data-icon="grid"></span><span>数据总览</span></button>
+        <button class="nav-item" data-page="students"><span class="nav-icon" data-icon="users"></span><span>学生报名</span><span class="nav-count">128</span></button>
+        <button class="nav-item" data-page="audit"><span class="nav-icon" data-icon="clipboard"></span><span>报名审核</span><span class="nav-dot"></span></button>
+        <button class="nav-item" data-page="majors"><span class="nav-icon" data-icon="book"></span><span>专业管理</span></button>
+        <button class="nav-item" data-page="analytics"><span class="nav-icon" data-icon="chart"></span><span>数据统计</span></button>
+      </nav>
+
+      <div class="sidebar-label sidebar-label-spaced">系统管理</div>
+      <nav class="nav-list">
+        <button class="nav-item" data-page="settings"><span class="nav-icon" data-icon="settings"></span><span>系统设置</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="help-card">
+          <div class="help-icon"><span data-icon="life"></span></div>
+          <strong>需要帮助？</strong>
+          <p>查看操作指南，快速熟悉招生工作台。</p>
+          <button class="help-link" data-action="help">查看使用指南 <span data-icon="arrow"></span></button>
+        </div>
+        <div class="user-profile">
+          <div class="avatar avatar-indigo">招</div>
+          <div class="user-meta"><strong>招生管理员</strong><span>系统管理员</span></div>
+          <button class="icon-button profile-more" aria-label="账户菜单" data-action="profile"><span data-icon="more"></span></button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="mobile-backdrop" id="mobileBackdrop"></div>
+
+    <section class="app-main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-button menu-toggle" aria-label="打开导航" data-action="menu"><span data-icon="menu"></span></button>
+          <div class="breadcrumb"><span>工作台</span><span class="crumb-separator">/</span><strong id="breadcrumbCurrent">数据总览</strong></div>
+        </div>
+        <div class="topbar-right">
+          <label class="global-search"><span data-icon="search"></span><input id="globalSearch" type="search" placeholder="搜索学生姓名、报名编号..." aria-label="全局搜索" /><kbd>⌘ K</kbd></label>
+          <button class="icon-button notification-button" aria-label="通知" data-action="notifications"><span data-icon="bell"></span><i></i></button>
+          <div class="topbar-divider"></div>
+          <div class="top-user"><div class="avatar avatar-indigo">招</div><div><strong>招生管理员</strong><span>管理端</span></div><span class="chevron" data-icon="chevron"></span></div>
+        </div>
+      </header>
+
+      <main class="content" id="pageContent" tabindex="-1">
+        <div class="page-loading"><span class="loading-spinner"></span>正在加载工作台...</div>
+      </main>
+      <footer class="app-footer"><span>© 2026 校园招生管理系统</span><span>让招生工作更简单、更高效</span></footer>
+    </section>
+  </div>
+
+  <div class="modal-root" id="modalRoot" aria-live="polite"></div>
+  <div class="toast-root" id="toastRoot" aria-live="polite" aria-atomic="true"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
