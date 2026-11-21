@@ -341,13 +341,21 @@
     openModal("学生报名详情", "报名资料仅用于本次演示界面展示。", body);
   }
 
-  function updateStudentStatus(id, status) {
+  async function updateStudentStatus(id, status) {
     var student = students.find(function (item) { return item.id === id; });
     if (!student) return;
-    student.status = status;
-    closeModal();
-    renderPage(currentPage);
-    showToast(student.name + " 的报名状态已更新为“" + status + "”");
+    try {
+      await apiRequest("/api/applications/" + encodeURIComponent(id), {
+        method: "PATCH",
+        body: JSON.stringify({ status: status })
+      });
+      closeModal();
+      await loadAdminApplications();
+      renderPage(currentPage);
+      showToast(student.name + " 的报名状态已更新为“" + status + "”");
+    } catch (error) {
+      showToast(error.message);
+    }
   }
 
   function exportCSV() {
