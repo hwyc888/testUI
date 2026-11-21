@@ -451,7 +451,11 @@
     }
     try {
       var setup = await apiRequest("/api/auth/setup");
-      renderAuthScreen(setup.initialized ? "login" : "setup", "admin");
+      if (!setup.initialized && !setup.setupAvailable) {
+        renderAuthScreen("setup", "admin", "服务器尚未配置初始化密钥，请联系系统维护人员。");
+      } else {
+        renderAuthScreen(setup.initialized ? "login" : "setup", "admin");
+      }
     } catch (error) {
       renderAuthScreen("login", "admin", "登录服务暂时不可用，请刷新页面后重试");
     }
