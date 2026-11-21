@@ -433,6 +433,50 @@
     return data;
   }
 
+
+  function encodeBase64Url(bytes) {
+    var binary = "";
+    for (var index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  function decodeBase64Url(value) {
+    var normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+    var binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
+    var bytes = new Uint8Array(binary.length);
+    for (var index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  }
+
+  function createPasswordSalt() {
+    return encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)));
+  }
+
+  async function derivePasswordKey(password, saltText) {
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error("当前浏览器不支持安全密码计算，请使用最新版 Chrome、Edge 或 Firefox。");
+    }
+    var key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+    var derived = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt: decodeBase64Url(saltText), iterations: 210000, hash: "SHA-256" },
+      key,
+      256
+    );
+    return encodeBase64Url(new Uint8Array(derived));
+  }
+
+  async function getPasswordChallenge(username, role) {
+    return await apiRequest(
+      "/api/auth/challenge?username=" + encodeURIComponent(username) + "&role=" + encodeURIComponent(role)
+    );
+  }
+
   function maskPhone(phone) {
     var value = String(phone || "");
     return /^1[3-9]\d{9}$/.test(value) ? value.slice(0, 3) + "****" + value.slice(-4) : value;
@@ -535,32 +579,43 @@
         if (mode === "setup") {
           var password = String(data.get("password") || "");
           if (password !== String(data.get("confirm_password") || "")) throw new Error("两次输入的密码不一致");
+          var setupSalt = createPasswordSalt();
+          var setupPasswordKey = await derivePasswordKey(password, setupSalt);
           result = await apiRequest("/api/auth/setup", {
             method: "POST",
             headers: { "X-Setup-Key": String(data.get("setup_key") || "") },
             body: JSON.stringify({
               username: data.get("username"),
               full_name: data.get("full_name"),
-              password: password
+              password_key: setupPasswordKey,
+              password_salt: setupSalt
             })
           });
         } else if (mode === "register") {
           var registerPassword = String(data.get("password") || "");
           if (registerPassword !== String(data.get("confirm_password") || "")) throw new Error("两次输入的密码不一致");
+          var registerSalt = createPasswordSalt();
+          var registerPasswordKey = await derivePasswordKey(registerPassword, registerSalt);
           result = await apiRequest("/api/auth/register", {
             method: "POST",
             body: JSON.stringify({
               full_name: data.get("full_name"),
               phone: data.get("phone"),
-              password: registerPassword
+              password_key: registerPasswordKey,
+              password_salt: registerSalt
             })
           });
         } else {
+          var loginUsername = String(data.get("username") || "").trim().toLowerCase();
+          var loginPassword = String(data.get("password") || "");
+          var loginChallenge = await getPasswordChallenge(loginUsername, activeRole);
+          var loginPasswordKey = await derivePasswordKey(loginPassword, loginChallenge.salt);
           result = await apiRequest("/api/auth/login", {
             method: "POST",
             body: JSON.stringify({
-              username: data.get("username"),
-              password: data.get("password"),
+              username: loginUsername,
+              password_key: loginPasswordKey,
+              password_salt: loginChallenge.salt,
               role: activeRole
             })
           });
@@ -727,9 +782,19 @@
           return;
         }
         try {
+          var oldPassword = String(data.get("old_password") || "");
+          var challenge = await getPasswordChallenge(currentUser.username, currentUser.role);
+          var oldPasswordKey = await derivePasswordKey(oldPassword, challenge.salt);
+          var newPasswordSalt = createPasswordSalt();
+          var newPasswordKey = await derivePasswordKey(newPassword, newPasswordSalt);
           await apiRequest("/api/auth/change-password", {
             method: "POST",
-            body: JSON.stringify({ old_password: data.get("old_password"), new_password: newPassword })
+            body: JSON.stringify({
+              old_password_key: oldPasswordKey,
+              old_password_salt: challenge.salt,
+              new_password_key: newPasswordKey,
+              new_password_salt: newPasswordSalt
+            })
           });
           closeModal();
           showToast("密码已更新");
