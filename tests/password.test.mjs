@@ -1,9 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { webcrypto } from "node:crypto";
-
-globalThis.crypto = webcrypto;
-
 const { createPasswordVerifier, verifyPasswordMaterial, validPasswordMaterial, fakePasswordSalt } =
   await import("../functions/_lib/password.js");
 
